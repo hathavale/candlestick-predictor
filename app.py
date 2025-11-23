@@ -6,6 +6,14 @@ from talib import abstract
 import asyncio
 from telegram import Bot
 import hashlib
+import os
+
+# Helper function to get secrets from either st.secrets or environment variables
+def get_secret(key, default=""):
+    try:
+        return st.secrets.get(key, default)
+    except:
+        return os.environ.get(key, default)
 
 # Initialize session state for authentication
 if 'authenticated' not in st.session_state:
@@ -32,11 +40,11 @@ def login_page():
                 if not username or not password:
                     st.error("❌ Please enter both username and password")
                 else:
-                    # Check credentials from secrets (passwords are already stored as-is)
-                    admin_user = st.secrets.get("ADMIN_USER_ID", "")
-                    admin_pass = st.secrets.get("ADMIN_PASS", "")
-                    guest_user = st.secrets.get("GUEST_USER_ID", "")
-                    guest_pass = st.secrets.get("USER_PASS", "")
+                    # Check credentials from secrets or environment variables
+                    admin_user = get_secret("ADMIN_USER_ID", "")
+                    admin_pass = get_secret("ADMIN_PASS", "")
+                    guest_user = get_secret("GUEST_USER_ID", "")
+                    guest_pass = get_secret("USER_PASS", "")
                     
                     if username == admin_user and password == admin_pass:
                         st.session_state.authenticated = True
@@ -81,7 +89,7 @@ with st.sidebar:
 # Sidebar for shared inputs
 with st.sidebar:
     st.header("Settings")
-    API_KEY = st.secrets.get("ALPHA_VANTAGE_API_KEY", "demo")
+    API_KEY = get_secret("ALPHA_VANTAGE_API_KEY", "demo")
     ticker = st.text_input("Ticker", "AAPL").upper()
     interval = st.selectbox("Interval", ["1min", "5min", "15min", "30min", "60min"], index=2)
     include_extended = st.checkbox("Include After-Hours", True)
@@ -846,8 +854,8 @@ with tab4:
     st.header("📨 Telegram Messages")
     st.write("Send trading signals and alerts via Telegram bot.")
     
-    # Get API key from secrets
-    TELEGRAM_API_KEY = st.secrets.get("TELEGRAM_API_KEY", "")
+    # Get API key from secrets or environment
+    TELEGRAM_API_KEY = get_secret("TELEGRAM_API_KEY", "")
     
     if not TELEGRAM_API_KEY:
         st.error("❌ Telegram API key not found in secrets.toml")
