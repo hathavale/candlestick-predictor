@@ -144,6 +144,9 @@ def fetch_data(ticker, interval, extended, full=False):
     df = pd.DataFrame.from_dict(resp[ts_key], orient="index")
     df = df.astype(float)
     df.index = pd.to_datetime(df.index)
+    # Localize to US/Eastern timezone (Alpha Vantage uses ET)
+    if df.index.tzinfo is None:
+        df.index = df.index.tz_localize('US/Eastern')
     df.sort_index(inplace=True)
     df.columns = ["open", "high", "low", "close", "volume"]
     return df
@@ -390,6 +393,21 @@ def calculate_score(current, df, use_momentum, use_trend, use_macd, use_obv, use
 with tab1:
     st.header("Live Signal")
     
+    # Check current market status upfront
+    now_et = pd.Timestamp.now(tz='US/Eastern')
+    is_weekend_now = now_et.weekday() >= 5
+    is_trading_hours = 9 <= now_et.hour < 16
+    
+    if is_weekend_now:
+        st.warning("📅 **WEEKEND**: Market is closed. Data shown will be from last Friday's trading session.")
+    elif not is_trading_hours:
+        if now_et.hour < 9:
+            st.info("🌅 **PRE-MARKET**: Regular trading starts at 9:30 AM ET. Showing previous close data.")
+        else:
+            st.info("🌆 **AFTER-HOURS**: Regular trading ended at 4:00 PM ET. Showing last trading session data.")
+    else:
+        st.success(f"🟢 **MARKET OPEN**: Live trading data available | Current time: {now_et.strftime('%I:%M %p ET')}")
+    
     # Real-time monitoring controls
     col_btn1, col_btn2, col_refresh = st.columns([2, 2, 2])
     with col_btn1:
@@ -425,13 +443,7 @@ with tab1:
             latest_time = df.index[-1]
             current_time = pd.Timestamp.now(tz='US/Eastern')
             
-            # Ensure latest_time is timezone-aware
-            if latest_time.tzinfo is None:
-                latest_time = latest_time.tz_localize('US/Eastern')
-            else:
-                latest_time = latest_time.tz_convert('US/Eastern')
-            
-            # Calculate data freshness
+            # Calculate data freshness (both are now timezone-aware)
             time_diff = current_time - latest_time
             minutes_old = int(time_diff.total_seconds() / 60)
             
