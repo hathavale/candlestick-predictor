@@ -90,6 +90,13 @@ with st.sidebar:
 with st.sidebar:
     st.header("Settings")
     API_KEY = get_secret("ALPHA_VANTAGE_API_KEY", "demo")
+    
+    # API Status indicator
+    if API_KEY and API_KEY != "demo":
+        st.success("🚀 Premium API: Real-time data (600 calls/min)")
+    else:
+        st.warning("⚠️ Demo API: Limited data access")
+    
     ticker = st.text_input("Ticker", "AAPL").upper()
     interval = st.selectbox("Interval", ["1min", "5min", "15min", "30min", "60min"], index=2)
     include_extended = st.checkbox("Include After-Hours", True)
@@ -115,11 +122,21 @@ tab1, tab2, tab3, tab4 = st.tabs(["Live Signal", "Backtest", "Optimize", "Messag
 def fetch_data(ticker, interval, extended, full=False):
     extended_param = "&extended_hours=true" if extended else ""
     size = "full" if full else "compact"
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={ticker}&interval={interval}&outputsize={size}&apikey={API_KEY}{extended_param}"
+    # Use adjusted=false for real-time data without adjustments
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={ticker}&interval={interval}&outputsize={size}&apikey={API_KEY}{extended_param}&adjusted=false"
     resp = requests.get(url).json()
+    
+    # Check for rate limit or errors
+    if "Note" in resp:
+        st.warning(f"⚠️ API Note: {resp['Note']}")
+        return None
     if "Error Message" in resp:
         st.error(f"API Error: {resp['Error Message']}")
         return None
+    if "Information" in resp:
+        st.error(f"API Info: {resp['Information']}")
+        return None
+        
     ts_key = f"Time Series ({interval})"
     if ts_key not in resp:
         st.error("No data. Check ticker.")
@@ -372,8 +389,27 @@ def calculate_score(current, df, use_momentum, use_trend, use_macd, use_obv, use
 
 with tab1:
     st.header("Live Signal")
-    if st.button("Get Live Prediction", key="live"):
-        with st.spinner("Analyzing..."):
+    
+    # Real-time monitoring controls
+    col_btn1, col_btn2, col_refresh = st.columns([2, 2, 2])
+    with col_btn1:
+        manual_refresh = st.button("🔄 Get Live Prediction", key="live", use_container_width=True, type="primary")
+    with col_btn2:
+        auto_refresh = st.checkbox("Auto-Refresh", value=False, help="Automatically refresh data every 30 seconds (for 1min/5min intervals)")
+    with col_refresh:
+        if auto_refresh:
+            refresh_interval = st.selectbox("Refresh Rate", [30, 60, 120], format_func=lambda x: f"{x}s", index=0)
+        else:
+            refresh_interval = None
+    
+    # Auto-refresh logic
+    if auto_refresh and refresh_interval:
+        import time
+        time.sleep(refresh_interval)
+        st.rerun()
+    
+    if manual_refresh or auto_refresh:
+        with st.spinner("Fetching real-time data..."):
             df = fetch_data(ticker, interval, include_extended)
             if df is None: st.stop()
             
@@ -387,16 +423,41 @@ with tab1:
             
             latest = df.iloc[-1]
             latest_time = df.index[-1]
+            current_time = pd.Timestamp.now(tz='US/Eastern')
+            
+            # Calculate data freshness
+            time_diff = current_time - latest_time
+            minutes_old = int(time_diff.total_seconds() / 60)
             
             # Determine if current candle is during after-hours
             hour = latest_time.hour
+            current_hour = current_time.hour
+            current_weekday = current_time.weekday()
             is_after_hours = hour < 9 or hour >= 16
+            is_weekend = current_weekday >= 5
+            is_market_open = (9 <= current_hour < 16) and not is_weekend
             market_session = "After Hours" if is_after_hours else "Regular Hours"
+            
+            # Data freshness indicator
+            interval_minutes = {"1min": 1, "5min": 5, "15min": 15, "30min": 30, "60min": 60}
+            expected_delay = interval_minutes.get(interval, 15)
+            is_fresh = minutes_old <= (expected_delay + 5)
             
             # Create sub-tabs for Live Signal and Debug Info
             signal_tab, debug_tab = st.tabs(["📊 Prediction", "🔍 Debug Info"])
             
             with signal_tab:
+                # Market status banner
+                if is_weekend:
+                    st.error(f"🔴 **MARKET CLOSED** - Weekend | Last Update: {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                elif not is_market_open:
+                    st.warning(f"⏰ **MARKET CLOSED** - Outside Hours | Last Update: {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                else:
+                    if is_fresh:
+                        st.success(f"🟢 **LIVE DATA** - Updated {minutes_old} min ago | {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                    else:
+                        st.warning(f"⚠️ **DELAYED DATA** - {minutes_old} min old | {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                
                 score, signals = calculate_score(latest, df, use_momentum, use_trend, use_macd, use_obv, use_stoch_rsi, use_fibonacci, use_msb, use_supply_demand, sensitivity)
                 score = float(score)  # Ensure score is numeric
                 
@@ -411,6 +472,9 @@ with tab1:
                 st.markdown(f"### Next {interval} ({market_session}) → **:{color}[{direction}]**{volatility_note}")
                 st.write("**Patterns:**", ", ".join(signals) or "None")
                 st.write(f"**Signal Strength:** {score}")
+                
+                # Current timestamp
+                st.caption(f"🕐 Current Time: {current_time.strftime('%Y-%m-%d %I:%M:%S %p %Z')}")
             
             with debug_tab:
                 st.write("**Debug Info:**")
