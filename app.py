@@ -447,34 +447,44 @@ with tab1:
             time_diff = current_time - latest_time
             minutes_old = int(time_diff.total_seconds() / 60)
             
-            # Determine if current candle is during after-hours
-            hour = latest_time.hour
+            # Determine market status
             current_hour = current_time.hour
+            current_minute = current_time.minute
             current_weekday = current_time.weekday()
-            is_after_hours = hour < 9 or hour >= 16
+            latest_hour = latest_time.hour
+            
             is_weekend = current_weekday >= 5
-            is_market_open = (9 <= current_hour < 16) and not is_weekend
+            # Market is open 9:30 AM - 4:00 PM ET (9.5 to 16.0 in decimal hours)
+            current_time_decimal = current_hour + (current_minute / 60.0)
+            is_market_open = (9.5 <= current_time_decimal < 16.0) and not is_weekend
+            is_after_hours = latest_hour < 9 or latest_hour >= 16
             market_session = "After Hours" if is_after_hours else "Regular Hours"
             
-            # Data freshness indicator
+            # Data freshness indicator - only meaningful during market hours
             interval_minutes = {"1min": 1, "5min": 5, "15min": 15, "30min": 30, "60min": 60}
             expected_delay = interval_minutes.get(interval, 15)
-            is_fresh = minutes_old <= (expected_delay + 5)
+            # During market hours: data is fresh if within expected interval + 5 min buffer
+            # Outside market hours: always consider "expected" since no new data is generated
+            is_fresh = minutes_old <= (expected_delay + 5) if is_market_open else True
             
             # Create sub-tabs for Live Signal and Debug Info
             signal_tab, debug_tab = st.tabs(["📊 Prediction", "🔍 Debug Info"])
             
             with signal_tab:
-                # Market status banner
+                # Market status banner - show appropriate message based on market hours
                 if is_weekend:
-                    st.error(f"🔴 **MARKET CLOSED** - Weekend | Last Update: {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                    st.info(f"📅 **WEEKEND** - Market Closed | Showing Last Trading Session: {latest_time.strftime('%a %m/%d %I:%M %p')}")
                 elif not is_market_open:
-                    st.warning(f"⏰ **MARKET CLOSED** - Outside Hours | Last Update: {latest_time.strftime('%a %m/%d %I:%M %p')}")
-                else:
-                    if is_fresh:
-                        st.success(f"🟢 **LIVE DATA** - Updated {minutes_old} min ago | {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                    if current_hour < 9 or (current_hour == 9 and current_minute < 30):
+                        st.info(f"🌅 **PRE-MARKET** - Opens at 9:30 AM ET | Last Close: {latest_time.strftime('%a %m/%d %I:%M %p')}")
                     else:
-                        st.warning(f"⚠️ **DELAYED DATA** - {minutes_old} min old | {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                        st.info(f"🌆 **AFTER-HOURS** - Closed at 4:00 PM ET | Last Session: {latest_time.strftime('%a %m/%d %I:%M %p')}")
+                else:
+                    # Market is OPEN - show live data status
+                    if is_fresh:
+                        st.success(f"🟢 **LIVE DATA** - Market Open | Updated {minutes_old} min ago | {latest_time.strftime('%I:%M %p')}")
+                    else:
+                        st.warning(f"⚠️ **DELAYED DATA** - Data is {minutes_old} min old (Expected: <{expected_delay + 5} min) | {latest_time.strftime('%I:%M %p')}")
                 
                 score, signals = calculate_score(latest, df, use_momentum, use_trend, use_macd, use_obv, use_stoch_rsi, use_fibonacci, use_msb, use_supply_demand, sensitivity)
                 score = float(score)  # Ensure score is numeric
@@ -491,13 +501,22 @@ with tab1:
                 st.write("**Patterns:**", ", ".join(signals) or "None")
                 st.write(f"**Signal Strength:** {score}")
                 
-                # Current timestamp
-                st.caption(f"🕐 Current Time: {current_time.strftime('%Y-%m-%d %I:%M:%S %p %Z')}")
+                # Timestamp info
+                st.caption(f"📡 Data fetched from Alpha Vantage at: {current_time.strftime('%I:%M:%S %p %Z')}")
+                st.caption(f"📊 Latest candle timestamp: {latest_time.strftime('%a %m/%d %I:%M %p %Z')}")
             
             with debug_tab:
-                st.write("**Debug Info:**")
-                st.write(f"Latest Candle Time: {latest_time.strftime('%Y-%m-%d %H:%M')} ({market_session})")
-                st.write(f"Latest OHLC - Open: {float(latest['open']):.2f}, High: {float(latest['high']):.2f}, Low: {float(latest['low']):.2f}, Close: {float(latest['close']):.2f}")
+                st.write("**API & Data Info:**")
+                st.write(f"🔌 API Endpoint: TIME_SERIES_INTRADAY (adjusted=false, real-time)")
+                st.write(f"⏱️ Fetch Time: {current_time.strftime('%Y-%m-%d %I:%M:%S %p %Z')}")
+                st.write(f"📊 Total Candles Retrieved: {len(df)}")
+                st.write(f"📅 Data Range: {df.index[0].strftime('%m/%d %I:%M %p')} to {df.index[-1].strftime('%m/%d %I:%M %p')}")
+                st.write(f"⏲️ Latest Candle: {latest_time.strftime('%Y-%m-%d %H:%M')} ({market_session})")
+                st.write(f"⌚ Data Age: {minutes_old} minutes (Expected: ≤{expected_delay + 5} min during market hours)")
+                st.write(f"🏦 Market Status: {'OPEN' if is_market_open else 'CLOSED'} | Weekend: {is_weekend}")
+                st.write("")
+                st.write("**Latest OHLC:**")
+                st.write(f"Open: {float(latest['open']):.2f}, High: {float(latest['high']):.2f}, Low: {float(latest['low']):.2f}, Close: {float(latest['close']):.2f}")
                 st.write(f"Pattern Values - CDLENGULFING: {latest['CDLENGULFING']}, CDLMORNINGSTAR: {latest['CDLMORNINGSTAR']}, CDLEVENINGSTAR: {latest['CDLEVENINGSTAR']}")
                 st.write(f"CDLHAMMER: {latest['CDLHAMMER']}, CDLDOJI: {latest['CDLDOJI']}, CDL3WHITESOLDIERS: {latest['CDL3WHITESOLDIERS']}, CDL3BLACKCROWS: {latest['CDL3BLACKCROWS']}")
                 st.write(f"CDLHARAMI: {latest['CDLHARAMI']}, CDLPIERCING: {latest['CDLPIERCING']}, CDLDARKCLOUDCOVER: {latest['CDLDARKCLOUDCOVER']}")
