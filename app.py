@@ -425,6 +425,10 @@ with tab1:
             latest_time = df.index[-1]
             current_time = pd.Timestamp.now(tz='US/Eastern')
             
+            # Ensure latest_time is timezone-aware for proper comparison
+            if latest_time.tz is None:
+                latest_time = latest_time.tz_localize('US/Eastern')
+            
             # Calculate data freshness
             time_diff = current_time - latest_time
             minutes_old = int(time_diff.total_seconds() / 60)
