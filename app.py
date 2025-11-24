@@ -966,17 +966,17 @@ with tab4:
         
         with template_cols[0]:
             if st.button("🟢 Bullish Signal"):
-                message = f"🟢 BULLISH SIGNAL\n\nTicker: {ticker}\nInterval: {interval}\nTime: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}"
+                message = f"🟢 BULLISH SIGNAL\n\nTicker: {ticker}\nInterval: {interval}\nTime: {pd.Timestamp.now(tz='US/Eastern').strftime('%Y-%m-%d %H:%M %Z')}"
                 st.rerun()
         
         with template_cols[1]:
             if st.button("🔴 Bearish Signal"):
-                message = f"🔴 BEARISH SIGNAL\n\nTicker: {ticker}\nInterval: {interval}\nTime: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}"
+                message = f"🔴 BEARISH SIGNAL\n\nTicker: {ticker}\nInterval: {interval}\nTime: {pd.Timestamp.now(tz='US/Eastern').strftime('%Y-%m-%d %H:%M %Z')}"
                 st.rerun()
         
         with template_cols[2]:
             if st.button("⚠️ Alert"):
-                message = f"⚠️ ALERT\n\nTicker: {ticker}\nInterval: {interval}\nTime: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}"
+                message = f"⚠️ ALERT\n\nTicker: {ticker}\nInterval: {interval}\nTime: {pd.Timestamp.now(tz='US/Eastern').strftime('%Y-%m-%d %H:%M %Z')}"
                 st.rerun()
         
         with template_cols[3]:
