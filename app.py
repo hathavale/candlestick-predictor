@@ -98,7 +98,7 @@ with st.sidebar:
         st.warning("⚠️ Demo API: Limited data access")
     
     ticker = st.text_input("Ticker", "AAPL").upper()
-    interval = st.selectbox("Interval", ["1min", "5min", "15min", "30min", "60min"], index=2)
+    interval = st.selectbox("Interval", ["1min", "5min", "15min", "30min", "60min", "1day", "1week"], index=2)
     include_extended = st.checkbox("Include After-Hours", True)
     
     with st.expander("Advanced"):
@@ -120,10 +120,23 @@ tab1, tab2, tab3, tab4 = st.tabs(["Live Signal", "Backtest", "Optimize", "Messag
 
 # Shared data fetch function
 def fetch_data(ticker, interval, extended, full=False):
-    extended_param = "&extended_hours=true" if extended else ""
     size = "full" if full else "compact"
-    # Use adjusted=false for real-time data without adjustments
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={ticker}&interval={interval}&outputsize={size}&apikey={API_KEY}{extended_param}&adjusted=false"
+    
+    # Determine which API function to use based on interval
+    if interval == "1day":
+        # Use TIME_SERIES_DAILY for daily data
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize={size}&apikey={API_KEY}"
+        ts_key = "Time Series (Daily)"
+    elif interval == "1week":
+        # Use TIME_SERIES_WEEKLY for weekly data
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol={ticker}&apikey={API_KEY}"
+        ts_key = "Weekly Time Series"
+    else:
+        # Use TIME_SERIES_INTRADAY for minute-level data
+        extended_param = "&extended_hours=true" if extended else ""
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol={ticker}&interval={interval}&outputsize={size}&apikey={API_KEY}{extended_param}&adjusted=false"
+        ts_key = f"Time Series ({interval})"
+    
     resp = requests.get(url).json()
     
     # Check for rate limit or errors
@@ -137,7 +150,6 @@ def fetch_data(ticker, interval, extended, full=False):
         st.error(f"API Info: {resp['Information']}")
         return None
         
-    ts_key = f"Time Series ({interval})"
     if ts_key not in resp:
         st.error("No data. Check ticker.")
         return None
@@ -461,17 +473,17 @@ with tab1:
             market_session = "After Hours" if is_after_hours else "Regular Hours"
             
             # Data freshness indicator - only meaningful during market hours
-            interval_minutes = {"1min": 1, "5min": 5, "15min": 15, "30min": 30, "60min": 60}
+            interval_minutes = {"1min": 1, "5min": 5, "15min": 15, "30min": 30, "60min": 60, "1day": 1440, "1week": 10080}
             expected_delay = interval_minutes.get(interval, 15)
-            # During market hours: data is fresh if within expected interval + 5 min buffer
-            # Outside market hours: always consider "expected" since no new data is generated
-            is_fresh = minutes_old <= (expected_delay + 5) if is_market_open else True
+            # Calculate freshness based on market hours (for daily/weekly, more lenient)
+            is_fresh = minutes_old <= (expected_delay + 5)
             
             # Create sub-tabs for Live Signal and Debug Info
             signal_tab, debug_tab = st.tabs(["📊 Prediction", "🔍 Debug Info"])
             
             with signal_tab:
-                # Market status banner - show appropriate message based on market hours
+                # Market status banner - ONLY show freshness during actual market hours
+                # Priority: Weekend > Closed hours > Market open with freshness check
                 if is_weekend:
                     st.info(f"📅 **WEEKEND** - Market Closed | Showing Last Trading Session: {latest_time.strftime('%a %m/%d %I:%M %p')}")
                 elif not is_market_open:
@@ -480,11 +492,11 @@ with tab1:
                     else:
                         st.info(f"🌆 **AFTER-HOURS** - Closed at 4:00 PM ET | Last Session: {latest_time.strftime('%a %m/%d %I:%M %p')}")
                 else:
-                    # Market is OPEN - show live data status
+                    # Market IS OPEN (Mon-Fri 9:30 AM - 4:00 PM ET) - show actual data freshness
                     if is_fresh:
                         st.success(f"🟢 **LIVE DATA** - Market Open | Updated {minutes_old} min ago | {latest_time.strftime('%I:%M %p')}")
                     else:
-                        st.warning(f"⚠️ **DELAYED DATA** - Data is {minutes_old} min old (Expected: <{expected_delay + 5} min) | {latest_time.strftime('%I:%M %p')}")
+                        st.warning(f"⚠️ **DELAYED DATA** - Data is {minutes_old} min old (Expected: ≤{expected_delay + 5} min) | {latest_time.strftime('%I:%M %p')}")
                 
                 score, signals = calculate_score(latest, df, use_momentum, use_trend, use_macd, use_obv, use_stoch_rsi, use_fibonacci, use_msb, use_supply_demand, sensitivity)
                 score = float(score)  # Ensure score is numeric
@@ -514,6 +526,8 @@ with tab1:
                 st.write(f"⏲️ Latest Candle: {latest_time.strftime('%Y-%m-%d %H:%M')} ({market_session})")
                 st.write(f"⌚ Data Age: {minutes_old} minutes (Expected: ≤{expected_delay + 5} min during market hours)")
                 st.write(f"🏦 Market Status: {'OPEN' if is_market_open else 'CLOSED'} | Weekend: {is_weekend}")
+                st.write(f"🔍 Debug - current_time_decimal: {current_time_decimal:.2f}, is_market_open: {is_market_open}, is_fresh: {is_fresh}")
+                st.write(f"🔍 Debug - Current: {current_time.strftime('%a %H:%M')} | Weekday: {current_weekday} (5+ = weekend)")
                 st.write("")
                 st.write("**Latest OHLC:**")
                 st.write(f"Open: {float(latest['open']):.2f}, High: {float(latest['high']):.2f}, Low: {float(latest['low']):.2f}, Close: {float(latest['close']):.2f}")
